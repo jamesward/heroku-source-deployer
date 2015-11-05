@@ -1,126 +1,118 @@
 'use strict';
 
-var gutil = require('gulp-util'),
-  PluginError = gutil.PluginError,
-  through2 = require('through2'),
-  rp = require('request-promise');
+var Promise = require('bluebird');
 
-var PLUGIN_NAME = 'gulp-heroku-source-deployer';
+// deploy a dir
+function deployDir(apiToken, appName, dir) {
 
-function deploy(apiToken, appName) {
+  var stat = Promise.promisify(require('fs').stat);
 
-  if (!apiToken) {
-    throw new PluginError(PLUGIN_NAME, 'Missing apiToken');
-  }
+  var tarGzPromise = stat(dir).then(function(dirStat) {
+    if (!dirStat.isDirectory()) {
+      throw new Error('The specifed dir does not exist or is not a directory.');
+    }
 
-  if (!appName) {
-    throw new PluginError(PLUGIN_NAME, 'Missing appName');
-  }
+    return new Promise(function (resolve, reject) {
+      var stream = require('stream');
+      var targz = require('tar.gz');
 
-  var heroku = new (require('heroku-client'))({ token: apiToken });
+      var read = targz().createReadStream(dir);
 
-  return through2.obj(function(file, enc, cb) {
-
-    var self = this;
-
-    // create the sources endpoints
-    heroku.apps(appName).sources().create().then(function(sourceInfo) {
-
-      var doUpload = function(options) {
-
-        // upload the file
-        rp(options).then(function () {
-
-          // create a build
-          heroku.apps(appName).builds().create({source_blob: {url: sourceInfo.source_blob.get_url}}).then(function (buildInfo) {
-            // push the buildInfo into the stream
-            self.push(buildInfo);
-            cb();
-          }).catch(function (err) {
-            self.emit('error', new PluginError(PLUGIN_NAME, 'Could not create the build:' + err.body.message));
-            return cb();
-          });
-
-        }).catch(function (err) {
-          self.emit('error', new PluginError(PLUGIN_NAME, 'Could not upload source: ' + err));
-          return cb();
-        });
-      };
-
-      // upload the file this way, cause if it is piped then it is chunked and S3 doesn't handle chunks
-      var rpOptions = {
-        method: 'PUT',
-        url: sourceInfo.source_blob.put_url
-      };
-
-      if (file.isBuffer()) {
-        rpOptions.body = file.contents;
-        doUpload(rpOptions);
-      }
-      else if (file.isStream()) {
-        var bufs = [];
-        file.contents.on('data', function(chunk) {
+      var bufs = [];
+      var write = new stream.Writable({
+        write: function (chunk, encoding, next) {
           bufs.push(chunk);
-        });
-        file.contents.on('end', function() {
-          rpOptions.body = Buffer.concat(bufs);
-          doUpload(rpOptions);
-        });
-      }
-      else {
-        self.emit('error', new PluginError(PLUGIN_NAME, 'Unexpected file type:' + file.toString()));
-        return cb();
-      }
+          next();
+        }
+      });
 
-    }).catch(function(err) {
-      self.emit('error', new PluginError(PLUGIN_NAME, 'Could not create the sources endpoints: ' + err.body.message));
-      return cb();
+      // tar gz the dir
+      read.pipe(write);
+
+      read.on('error', reject);
+      write.on('error', reject);
+      write.on('finish', function () {
+        resolve(Buffer.concat(bufs));
+      });
     });
   });
 
+  return tarGzPromise.then(function(data) {
+    return deploy(apiToken, appName, data);
+  });
 }
 
-
-function buildComplete(apiToken, appName) {
+// deploy a tarGzBuffer
+function deploy(apiToken, appName, tarGzBuffer) {
 
   if (!apiToken) {
-    throw new PluginError(PLUGIN_NAME, 'Missing apiToken');
+    throw new Error('Missing apiToken');
   }
 
   if (!appName) {
-    throw new PluginError(PLUGIN_NAME, 'Missing appName');
+    throw new Error('Missing appName');
   }
 
   var heroku = new (require('heroku-client'))({ token: apiToken });
 
-  return through2.obj(function(buildInfo, enc, cb) {
+  // create the sources endpoints
+  return heroku.apps(appName).sources().create().then(function(sourceInfo) {
+    // upload the file this way, cause if it is piped then it is chunked and S3 doesn't handle chunks
+    var options = {
+      method: 'PUT',
+      url: sourceInfo.source_blob.put_url,
+      body: tarGzBuffer
+    };
 
-    var self = this;
+    var rp = require('request-promise');
 
+    // upload the file
+    return rp(options).then(function() {
+      // create a build
+      return heroku.apps(appName).builds().create({source_blob: {url: sourceInfo.source_blob.get_url}});
+    });
+
+  }).catch(function(err) {
+    throw new Error(err.body.message);
+  });
+}
+
+// poll for completion of the build
+function buildComplete(apiToken, appName, buildId) {
+
+  if (!apiToken) {
+    throw new Error('Missing apiToken');
+  }
+
+  if (!appName) {
+    throw new Error('Missing appName');
+  }
+
+  var heroku = new (require('heroku-client'))({ token: apiToken });
+
+  return new Promise(function (resolve, reject) {
     // get the build result every 5 seconds until it is completed
     // todo: max retries
     var statusPolling = setInterval(function() {
-      heroku.apps(appName).builds(buildInfo.id).result().info().then(function(buildResult) {
+      heroku.apps(appName).builds(buildId).result().info().then(function(buildResult) {
 
         if (buildResult.build.status != 'pending') {
+          // stop polling because the build is done
           clearInterval(statusPolling);
         }
 
         if (buildResult.build.status == 'succeeded') {
-          self.push(buildResult);
-          cb();
+          resolve(buildResult);
         }
         else if (buildResult.build.status == 'failed') {
           var lines = '';
           buildResult.lines.forEach(function(lineObj) {
             lines += lineObj.line + '\n';
           });
-          self.emit('error', new PluginError(PLUGIN_NAME, 'Build failed: ' + lines));
-          return cb();
+          reject(new Error('Build failed: ' + lines));
         }
       }).catch(function(err) {
-        self.emit('error', new PluginError(PLUGIN_NAME, 'Could not get the build result: ' + err.body.message));
-        return cb();
+        reject(new Error(err.body.message));
       });
     }, 5000);
 
@@ -129,5 +121,6 @@ function buildComplete(apiToken, appName) {
 
 module.exports = {
   deploy: deploy,
+  deployDir: deployDir,
   buildComplete: buildComplete
 };
