@@ -1,22 +1,30 @@
 'use strict';
 
 var Promise = require('bluebird');
+var fs = require('fs');
+var path = require('path');
 
-// deploy a dir
-function deployDir(apiToken, appName, dir) {
+function dirToTarGz(dir, useGitIgnore) {
+
+  if (useGitIgnore === undefined) {
+    useGitIgnore = true;
+  }
+
+  // only use the .gitignore if it exists
+  useGitIgnore = useGitIgnore & fs.existsSync(path.join(dir, '.gitignore'));
 
   var stat = Promise.promisify(require('fs').stat);
 
-  var tarGzPromise = stat(dir).then(function(dirStat) {
+  return stat(dir).then(function(dirStat) {
     if (!dirStat.isDirectory()) {
       throw new Error('The specifed dir does not exist or is not a directory.');
     }
 
     return new Promise(function (resolve, reject) {
+      var zlib = require('zlib');
+      var gzip = zlib.createGzip();
+      var tar = require('tar-fs');
       var stream = require('stream');
-      var targz = require('tar.gz');
-
-      var read = targz().createReadStream(dir);
 
       var bufs = [];
       var write = new stream.Writable({
@@ -26,18 +34,30 @@ function deployDir(apiToken, appName, dir) {
         }
       });
 
-      // tar gz the dir
-      read.pipe(write);
+      var options = {};
 
-      read.on('error', reject);
+      if (useGitIgnore) {
+        var parser = require('gitignore-parser');
+        var gitignore = parser.compile(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'));
+
+        options.ignore = function(name) {
+          return gitignore.denies(name);
+        };
+      }
+
+      tar.pack(dir, options).pipe(gzip).pipe(write);
+
       write.on('error', reject);
       write.on('finish', function () {
         resolve(Buffer.concat(bufs));
       });
     });
   });
+}
 
-  return tarGzPromise.then(function(data) {
+// deploy a dir
+function deployDir(apiToken, appName, dir, useGitIgnore) {
+  return dirToTarGz(dir, useGitIgnore).then(function(data) {
     return deploy(apiToken, appName, data);
   });
 }
@@ -120,6 +140,7 @@ function buildComplete(apiToken, appName, buildId) {
 }
 
 module.exports = {
+  dirToTarGz: dirToTarGz,
   deploy: deploy,
   deployDir: deployDir,
   buildComplete: buildComplete

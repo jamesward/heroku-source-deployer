@@ -24,7 +24,8 @@
     "request-promise": "~1.0.2",
     "bluebird": "~3.0.5",
     "heroku-client": "~2.3.2",
-    "tar.gz": "~1.0.2"
+    "tar-fs": "~1.8.1",
+    "gitignore-parser": "~0.0.2"
   },
   "engines": {
     "node": ">= 0.10.0"

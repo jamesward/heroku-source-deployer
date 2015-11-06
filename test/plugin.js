@@ -25,6 +25,10 @@ describe('heroku-source-deployer', function() {
     });
   });
 
+  it('dirToTarGz should create a tar.gz and apply the .gitignore', function() {
+    return assert.eventually.isBelow(herokuSourceDeployer.dirToTarGz('.').then(function(d) {return d.length;}), 5000000);
+  });
+
   it('deploy should fail when the dir does not exist', function() {
     return assert.isRejected(herokuSourceDeployer.deployDir(apiToken, 'foo', 'foo'), /no such file or directory, stat 'foo'/);
   });
