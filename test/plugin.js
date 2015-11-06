@@ -30,7 +30,7 @@ describe('heroku-source-deployer', function() {
   });
 
   it('deploy should fail when the dir does not exist', function() {
-    return assert.isRejected(herokuSourceDeployer.deployDir(apiToken, 'foo', 'foo'), /no such file or directory, stat 'foo'/);
+    return assert.isRejected(herokuSourceDeployer.deployDir(apiToken, 'foo', 'foo'), /stat 'foo'/);
   });
 
   it('deploy should fail with an invalid appName', function() {
