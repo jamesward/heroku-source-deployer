@@ -27,12 +27,11 @@ function dirToTarGz(dir, useGitIgnore) {
       var stream = require('stream');
 
       var bufs = [];
-      var write = new stream.Writable({
-        write: function (chunk, encoding, next) {
-          bufs.push(chunk);
-          next();
-        }
-      });
+      var write = new stream.Writable();
+      write._write = function(chunk, encoding, next) {
+        bufs.push(chunk);
+        next();
+      };
 
       var options = {};
 
