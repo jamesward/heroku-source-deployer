@@ -6,6 +6,7 @@ var assert = chai.assert;
 chai.use(chaiAsPromised);
 
 var fs = require('fs');
+var path = require('path');
 var herokuSourceDeployer = require('../');
 
 var apiToken = process.env.HEROKU_ACCESS_TOKEN;
@@ -26,7 +27,42 @@ describe('heroku-source-deployer', function() {
   });
 
   it('dirToTarGz should create a tar.gz and apply the .gitignore', function() {
-    return assert.eventually.isBelow(herokuSourceDeployer.dirToTarGz('.').then(function(d) {return d.length;}), 5000000);
+    this.timeout(10000);
+
+    var tmp = require('tmp');
+    var tmpDir = tmp.dirSync().name;
+
+    var untgzPromise = herokuSourceDeployer.dirToTarGz('.').then(function(data) {
+      return new Promise(function(resolve, reject) {
+        var zlib = require('zlib');
+        var tar = require('tar-fs');
+
+        var stream = require('stream');
+
+        var gunzipBuffer = zlib.gunzipSync(data);
+        var bufferStream = new stream.PassThrough();
+        bufferStream.end(gunzipBuffer);
+        var write = bufferStream.pipe(tar.extract(tmpDir));
+        write.on('error', reject);
+        write.on('finish', resolve);
+      });
+    });
+
+    var gitIgnoreCheckPromise = untgzPromise.then(function() {
+      return new Promise(function(resolve, reject) {
+        var nodeModulesExists = fs.existsSync(path.join(tmpDir, "node_modules", "tar-fs"));
+        var testAppIndexPhpExists = fs.existsSync(path.join(tmpDir, "test", "app", "index.php"));
+
+        if (!nodeModulesExists && testAppIndexPhpExists) {
+          resolve("The .gitignore was applied correctly");
+        }
+        else {
+          reject("The .gitignore was not applied correctly");
+        }
+      });
+    });
+
+    return assert.isFulfilled(gitIgnoreCheckPromise);
   });
 
   it('deploy should fail when the dir does not exist', function() {

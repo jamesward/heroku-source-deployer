@@ -1,6 +1,6 @@
 {
   "name": "heroku-source-deployer",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Deploys sources to Heroku",
   "main": "plugin.js",
   "repository": {
@@ -36,7 +36,8 @@
     "jshint-stylish": "~2.0.0",
     "jshint": "~2.8.0",
     "mocha": "~2.3.3",
-    "mocha-spec-reporter-async": "~0.5.7"
+    "mocha-spec-reporter-async": "~0.5.7",
+    "tmp": "~0.0.28"
   },
   "scripts": {
     "test": "npm run lint && npm run test-mocha",
