@@ -5,6 +5,7 @@ var chaiAsPromised = require('chai-as-promised');
 var assert = chai.assert;
 chai.use(chaiAsPromised);
 
+var Promise = require('bluebird');
 var fs = require('fs');
 var path = require('path');
 var herokuSourceDeployer = require('../');
