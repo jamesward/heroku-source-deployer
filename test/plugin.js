@@ -37,13 +37,11 @@ describe('heroku-source-deployer', function() {
       return new Promise(function(resolve, reject) {
         var zlib = require('zlib');
         var tar = require('tar-fs');
-
         var stream = require('stream');
 
-        var gunzipBuffer = zlib.gunzipSync(data);
         var bufferStream = new stream.PassThrough();
-        bufferStream.end(gunzipBuffer);
-        var write = bufferStream.pipe(tar.extract(tmpDir));
+        bufferStream.end(data);
+        var write = bufferStream.pipe(zlib.createGunzip()).pipe(tar.extract(tmpDir));
         write.on('error', reject);
         write.on('finish', resolve);
       });
