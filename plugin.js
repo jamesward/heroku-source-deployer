@@ -40,7 +40,9 @@ function dirToTarGz(dir, useGitIgnore) {
         var gitignore = parser.compile(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'));
 
         options.ignore = function(name) {
-          return gitignore.denies(name);
+          // name could be absolute but we need a relative name since .gitignore is relative
+          var relativeName = path.relative(dir, name);
+          return gitignore.denies(relativeName);
         };
       }
 

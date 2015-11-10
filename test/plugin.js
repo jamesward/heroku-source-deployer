@@ -27,13 +27,11 @@ describe('heroku-source-deployer', function() {
     });
   });
 
-  it('dirToTarGz should create a tar.gz and apply the .gitignore', function() {
-    this.timeout(10000);
-
+  function dirToTarGzTest(dir) {
     var tmp = require('tmp');
     var tmpDir = tmp.dirSync().name;
 
-    var untgzPromise = herokuSourceDeployer.dirToTarGz('.').then(function(data) {
+    var untgzPromise = herokuSourceDeployer.dirToTarGz(dir).then(function(data) {
       return new Promise(function(resolve, reject) {
         var zlib = require('zlib');
         var tar = require('tar-fs');
@@ -62,6 +60,18 @@ describe('heroku-source-deployer', function() {
     });
 
     return assert.isFulfilled(gitIgnoreCheckPromise);
+  }
+
+  it('dirToTarGz should create a tar.gz from a relative path and apply the .gitignore', function() {
+    this.timeout(10000);
+
+    return dirToTarGzTest(".");
+  });
+
+  it('dirToTarGz should create a tar.gz from an absolute path and apply the .gitignore', function() {
+    this.timeout(10000);
+
+    return dirToTarGzTest(path.resolve("."));
   });
 
   it('deploy should fail when the dir does not exist', function() {
